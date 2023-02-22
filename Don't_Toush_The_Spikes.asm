@@ -1,4 +1,3 @@
-
 IDEAL
 MODEL small
 STACK 100h
@@ -117,6 +116,7 @@ DATASEG
     bird_y DW 90
     slope DW 14
     bird_direction DB 'r'
+    ticks_amount DW 2500 ; how long the game tick is
 
     ; score
     score DB 0
@@ -503,7 +503,7 @@ proc PaintSquare
     push cx
     push dx
     mov ax, color ; set color
-    mov ah, 0ch ; set print command
+    mov ah, 0ch ; set print command 
     mov cx, buttom_right_x ; set cx to end of square
     x_loop:
         mov dx, buttom_right_y ; set dx to end of line
@@ -516,8 +516,11 @@ proc PaintSquare
             jae y_loop
         y_was_zero:
         dec cx
+        cmp cx, 0ffffh
+        je x_was_zero
         cmp cx, top_left_x
         jae x_loop
+x_was_zero:
     ; pop all registers back
     pop dx
     pop cx
@@ -570,7 +573,7 @@ proc Waitgametick
     push cx
     push dx
     mov ah, 2ch
-    mov cx, 5000 ; amount of ticks
+    mov cx, [ticks_amount] ; amount of ticks
 delay_loop:
     push cx
     int 21h
@@ -806,6 +809,28 @@ endp BirdHitWall
 
 
 proc LoadGame
+
+    ; hide mouse
+    mov ax, 0
+    int 33h
+
+    ; reset variables
+    mov [bird_x], 156
+    mov [bird_y], 90
+    mov [bird_direction], 'r'
+    mov [slope], 14
+    mov [score], 0
+    mov [score_digit], 0
+    mov [score_tens], 0
+
+
+    push 0 ; paint the background black
+    push 0
+    push 0
+    push 319
+    push 199
+    call PaintSquare
+
     push [background_color]
     push [left_wall_place]
     push 0
@@ -937,6 +962,141 @@ proc PrintScore
 endp PrintScore
 
 
+proc HomeScreen
+    ; background
+    push [background_color]
+    push 0
+    push 0
+    push 319
+    push 199
+    call PaintSquare
+
+    ; start button
+    push 2
+    push 111
+    push 100
+    push 300
+    push 179
+    call PaintSquare
+
+    ; exit button
+    push 4
+    push 10
+    push 10
+    push 30
+    push 30
+    call PaintSquare
+
+    ; start text
+    push 0
+    push offset start_message_x_array
+    push offset start_message_y_array
+    push 15
+    push 1184
+    push 140
+    push 126
+    call PrintArray
+
+    ; closing x draw
+    push 0
+    push offset close_x_array_x
+    push offset close_x_array_y
+    push 15
+    push 81
+    push 13
+    push 13
+    call PrintArray
+
+    ; high text
+    push 0
+    push offset high_message_x_array
+    push offset high_message_y_array
+    push 15
+    push 540
+    push 19
+    push 110
+    call PrintArray
+
+    ; title
+    push 0
+    push offset spikes_message_x_array
+    push offset spikes_message_y_array
+    push 15
+    push 2200
+    push 70
+    push 25
+    call PrintArray
+
+    ; high score digit
+    mov bl, [high_score_digit]
+    xor bh, bh
+    shl bx, 1
+    push 0
+    mov dx, [nums_x_arrays_offset + bx]
+    push dx
+    mov dx, [nums_y_arrays_offset + bx]
+    push dx
+    push 15
+    mov dx, [nums_p_amounts + bx]
+    push dx
+    push 57
+    push 145
+    call PrintArray
+
+    ; high score tens digit
+    mov bl, [high_score_tens]
+    xor bh, bh
+    shl bx, 1
+    push 0
+    mov dx, [nums_x_arrays_offset + bx]
+    push dx
+    mov dx, [nums_y_arrays_offset + bx]
+    push dx
+    push 15
+    mov dx, [nums_p_amounts + bx]
+    push dx
+    push 33
+    push 145
+    call PrintArray
+
+    wait_for_click_loop:
+    ; check if mouse is clicked
+    mov ax, 1
+    int 33h
+    mov ax, 3
+    int 33h
+    cmp bx, 0
+jz wait_for_click_loop
+    shr cx, 1 ; check if curser on start
+    push cx
+    push dx
+    push 111
+    push 100
+    push 179
+    push 300
+    call CheckIfInBox
+    cmp ax, 1
+je start_was_pressed
+    push cx
+    push dx
+    push 10
+    push 10
+    push 30
+    push 30
+    call CheckIfInBox
+    cmp ax, 1
+je exit_was_pressed
+    jmp wait_for_click_loop
+start_was_pressed:
+    xor ax, ax
+    jmp end_home_screen
+exit_was_pressed:
+    mov ax, 1
+end_home_screen:
+    ret
+endp HomeScreen
+
+
 proc CheckIfInBox
     ; will retun in ax. 1 if in box, and 0 otherwise
     x equ [bp + 14]
@@ -945,6 +1105,8 @@ proc CheckIfInBox
     box_left_x equ [bp + 8]
     box_buttom_y equ [bp + 6]
     box_right_x equ [bp + 4]
+    push bp
+    mov bp, sp
     mov ax, x
     cmp ax, box_left_x
     jb not_in_box
@@ -960,35 +1122,12 @@ proc CheckIfInBox
 not_in_box:
     xor ax, ax
 endCheckIfInBox:
+    pop bp
     ret 12
 endp CheckIfInBox
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-start:
-mov ax, @data
-mov ds, ax
-    xor ax, ax
-    ; graphics mode
-    mov ax, 13h
-    int 10h
-
-    call CreateNumOffsetArrays ; set the arrays for later use
-
-    call LoadGame
-
+proc PlayGame
     ; wait for first press
     mov ah, 01h
     int 21h
@@ -1013,7 +1152,7 @@ game_loop:
     call BirdHitWall
 bird_didnt_hit_wall:
     cmp ax, 2 ; if the bird collided a spike close the game
-    je exit
+    je end_game
 
     ;print score
     call PrintScore
@@ -1027,9 +1166,146 @@ bird_didnt_hit_wall:
 
     ; next game loop
     jmp game_loop
+end_game:
+    ret
+endp PlayGame
 
+
+proc LosingScreen
+
+    ; replace high score if needed
+    mov al, [score]
+    cmp al, [high_score]
+    jb dont_replace_high_score
+    mov al, [score_digit]
+    mov [high_score_digit], al
+    mov al, [score_tens]
+    mov [high_score_tens], al
+dont_replace_high_score:
+
+    ; background
+    push 12
+    push 120
+    push 60
+    push 200
+    push 140
+    call PaintSquare
+
+    ; exit button
+    push 4
+    push 123
+    push 63
+    push 143
+    push 83
+    call PaintSquare
+
+    ; closing x draw
+    push 0
+    push offset close_x_array_x
+    push offset close_x_array_y
+    push 15
+    push 81
+    push 126
+    push 66
+    call PrintArray
+
+    mov bl, [score_digit]
+    xor bh, bh
+    shl bx, 1
+    push 0
+    mov dx, [nums_x_arrays_offset + bx]
+    push dx
+    mov dx, [nums_y_arrays_offset + bx]
+    push dx
+    push 8
+    mov dx, [nums_p_amounts + bx]
+    push dx
+    push 164
+    push 93
+    call PrintArray
+
+    mov bl, [score_tens]
+    xor bh, bh
+    shl bx, 1
+    push 0
+    mov dx, [nums_x_arrays_offset + bx]
+    push dx
+    mov dx, [nums_y_arrays_offset + bx]
+    push dx
+    push 8
+    mov dx, [nums_p_amounts + bx]
+    push dx
+    push 140
+    push 93
+    call PrintArray
+
+    wait_for_click_loop_losing:
+    ; check if mouse is clicked
+    mov ax, 1
+    int 33h
+    mov ax, 3
+    int 33h
+    cmp bx, 0
+jz wait_for_click_loop_losing
+    shr cx, 1 ; check if curser on start
+    push cx
+    push dx
+    push 63
+    push 123
+    push 93
+    push 143
+    call CheckIfInBox
+    cmp ax, 1
+jne wait_for_click_loop_losing
+    mov ax , 0
+    int 33h
+    ret
+endp LosingScreen
+
+
+
+
+
+
+
+
+
+
+
+start:
+mov ax, @data
+mov ds, ax
+    xor ax, ax
+    ; graphics mode
+    mov ax, 13h
+    int 10h
+
+    call CreateNumOffsetArrays ; set the arrays for later use
+
+Home_Screen:
+    call HomeScreen
+    cmp ax, 1
+    je exit ; if the 'x' was pressed, exit
+
+    call LoadGame
+
+    call PlayGame
+
+    call LosingScreen
+
+    jmp Home_Screen
 
 exit:
+
+mov ax, 0 ; delete mouse
+int 33h
+push 0 ; delete the screen
+push 0
+push 0
+push 319
+push 199
+call PaintSquare
+
 mov ax, 4c00h
 int 21h
 END start
