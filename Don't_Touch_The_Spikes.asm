@@ -116,7 +116,7 @@ DATASEG
     bird_y DW 90
     slope DW 14
     bird_direction DB 'r'
-    ticks_amount DW 2500 ; how long the game tick is
+    ticks_amount DW 3800 ; how long the game tick is
 
     ; score
     score DB 0
@@ -146,7 +146,7 @@ DATASEG
     Timer DB -1
     streak DW 0
     High_streak DW 0
-    min_streak DW 5
+    min_streak DW 7
 
 
 
@@ -813,6 +813,11 @@ proc LoadGame
     ; hide mouse
     mov ax, 0
     int 33h
+	
+	; reset keyboaard buffer
+	mov ah,0ch
+	mov al,0
+	int 21h
 
     ; reset variables
     mov [bird_x], 156
@@ -822,6 +827,7 @@ proc LoadGame
     mov [score], 0
     mov [score_digit], 0
     mov [score_tens], 0
+	mov [min_streak], 7
 
 
     push 0 ; paint the background black
@@ -1128,10 +1134,16 @@ endp CheckIfInBox
 
 
 proc PlayGame
+	
     ; wait for first press
+wait_for_first_click_loop:
     mov ah, 01h
-    int 21h
-
+    int 16h
+    jz wait_for_first_click_loop
+    mov ah, 0h
+    int 16h
+    cmp al, 32
+    jne wait_for_first_click_loop
 game_loop:
 
     call UpdateSlope ; if keyboard pressed, update slope
@@ -1177,6 +1189,7 @@ proc LosingScreen
     mov al, [score]
     cmp al, [high_score]
     jb dont_replace_high_score
+	mov [high_score], al
     mov al, [score_digit]
     mov [high_score_digit], al
     mov al, [score_tens]
@@ -1297,15 +1310,15 @@ Home_Screen:
 
 exit:
 
-mov ax, 0 ; delete mouse
-int 33h
-push 0 ; delete the screen
-push 0
-push 0
-push 319
-push 199
-call PaintSquare
+	mov ax, 0 ; delete mouse
+	int 33h
+	push 0 ; delete the screen
+	push 0
+	push 0
+	push 319
+	push 199
+	call PaintSquare
 
-mov ax, 4c00h
-int 21h
+	mov ax, 4c00h
+	int 21h
 END start
